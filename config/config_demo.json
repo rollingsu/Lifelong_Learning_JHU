@@ -1,0 +1,8 @@
+{
+    "dataset_name": "AbdomenCT-1k",
+    "categories": ["liver", "kidney", "spleen", "pancreas"],
+    "demo_case": {
+        "ct_path": "D:/SegVol-main/0000/FLARE22_Tr_0001_0000/image.npy",
+        "gt_path": "D:/SegVol-main/0000/FLARE22_Tr_0001_0000/mask_(13, 512, 512, 110).npz" 
+    }
+}

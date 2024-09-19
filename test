@@ -1,0 +1,70 @@
+from transformers import AutoModel, AutoTokenizer
+import torch
+import os
+
+# get device
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+# load model
+clip_tokenizer = AutoTokenizer.from_pretrained("BAAI/SegVol")
+model = AutoModel.from_pretrained("BAAI/SegVol", trust_remote_code=True, test_mode=True)
+model.model.text_encoder.tokenizer = clip_tokenizer
+model.eval()
+model.to(device)
+print('model load done')
+
+# set case path
+ct_path = '"D:/lifelong learning/Pro/Pro/BDMAP_00000500/ct.nii.gz"'
+gt_path = '"D:/lifelong learning/Pro/Pro/BDMAP_00000500/segmentations/adrenal_gland_left.nii.gz"'
+
+# set categories, corresponding to the unique values(1, 2, 3, 4, ...) in ground truth mask
+categories = ["liver", "kidney", "spleen", "pancreas"]
+
+# generate npy data format
+ct_npy, gt_npy = model.processor.preprocess_ct_gt(ct_path, gt_path, category=categories)
+# IF you have download our 25 processed datasets, you can skip to here with the processed ct_npy, gt_npy files
+
+# go through zoom_transform to generate zoomout & zoomin views
+data_item = model.processor.zoom_transform(ct_npy, gt_npy)
+
+# add batch dim manually
+data_item['image'], data_item['label'], data_item['zoom_out_image'], data_item['zoom_out_label'] = \
+data_item['image'].unsqueeze(0).to(device), data_item['label'].unsqueeze(0).to(device), data_item['zoom_out_image'].unsqueeze(0).to(device), data_item['zoom_out_label'].unsqueeze(0).to(device)
+
+# take liver as the example
+cls_idx = 0
+
+# text prompt
+text_prompt = [categories[cls_idx]]
+
+# point prompt
+point_prompt, point_prompt_map = model.processor.point_prompt_b(data_item['zoom_out_label'][0][cls_idx], device=device)   # inputs w/o batch dim, outputs w batch dim
+
+# bbox prompt
+bbox_prompt, bbox_prompt_map = model.processor.bbox_prompt_b(data_item['zoom_out_label'][0][cls_idx], device=device)   # inputs w/o batch dim, outputs w batch dim
+
+print('prompt done')
+
+# segvol test forward
+# use_zoom: use zoom-out-zoom-in
+# point_prompt_group: use point prompt
+# bbox_prompt_group: use bbox prompt
+# text_prompt: use text prompt
+logits_mask = model.forward_test(image=data_item['image'],
+      zoomed_image=data_item['zoom_out_image'],
+      # point_prompt_group=[point_prompt, point_prompt_map],
+      bbox_prompt_group=[bbox_prompt, bbox_prompt_map],
+      text_prompt=text_prompt,
+      use_zoom=True
+      )
+
+# cal dice score
+dice = model.processor.dice_score(logits_mask[0][0], data_item['label'][0][cls_idx], device)
+print(dice)
+
+# save prediction as nii.gz file
+save_path='./Case_preds_00001.nii.gz'
+model.processor.save_preds(ct_path, save_path, logits_mask[0][0], 
+                           start_coord=data_item['foreground_start_coord'], 
+                           end_coord=data_item['foreground_end_coord'])
+print('done')
