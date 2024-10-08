@@ -60,7 +60,6 @@ class lifelong(nn.Module):
                 text_embedding = self.text_encoder(text)  # (B, 768)
             else:
                 text_embedding = None
-
         sparse_embeddings, dense_embeddings = self.prompt_encoder(
             masks=None,
             text_embedding=text_embedding,
@@ -88,17 +87,6 @@ class lifelong(nn.Module):
         sl_loss += sl_loss_dice + sl_loss_bce
         return sl_loss
     
-    def build_prompt_label(self, bs, training_organs, train_labels):
-        # generate prompt & label
-        iter_organs = []
-        iter_text = []
-
-        for sample_idx in range(bs):
-            # organ prompt
-            iter_organs.append(training_organs)
-
-        iter_text = torch.stack(iter_organs, dim=0).cuda()
-        return iter_organs, iter_text
     
 class TextEncoder(nn.Module):
     def __init__(self, clip_ckpt):
@@ -141,6 +129,7 @@ class UNet(nn.Module):
         channels: Sequence[int],
         strides: Sequence[int],
         text_embedding_dim: int,
+        clip_ckpt,
         kernel_size: Sequence[int] | int = 3,
         up_kernel_size: Sequence[int] | int = 3,
         num_res_units: int = 0,
@@ -177,7 +166,8 @@ class UNet(nn.Module):
         self.dropout = dropout
         self.bias = bias
         self.adn_ordering = adn_ordering
-        self.text_fc - nn.Linear(text_embedding_dim, in_channels)
+        self.text_encoder = TextEncoder(clip_ckpt)
+        self.text_fc = nn.Linear(text_embedding_dim, in_channels)
 
         def _create_block(
             inc: int, outc: int, channels: Sequence[int], strides: Sequence[int], is_top: bool
